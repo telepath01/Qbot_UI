@@ -37,6 +37,7 @@ class SafetyPanel(QWidget):
     STOP_SCOPE = "This stops the PC viewer servers only."
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Build the checklist and connect Stop to the viewer-server shutdown signal."""
         super().__init__(parent)
         self._stop = QPushButton("Stop")
         self._stop.setObjectName("stopServersButton")
@@ -58,6 +59,7 @@ class SafetyPanel(QWidget):
         layout.addWidget(self._text)
 
     def render_text(self) -> str:
+        """Return the full safety checklist and explanatory statements as text."""
         lines = ["Checklist. This window does not perform these steps."]
         lines.extend(self.CHECKLIST)
         lines.append("")

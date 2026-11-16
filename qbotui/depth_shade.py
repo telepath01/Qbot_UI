@@ -25,6 +25,11 @@ class DepthShade:
     """Stretch the received depth bytes so the shapes in them are visible."""
 
     def shade(self, gray: np.ndarray) -> ShadedDepth:
+        """Create a more visible color image without modifying the source depth data.
+
+        Zero means "no depth reading", so it is excluded from the percentile
+        calculation and painted black in the result.
+        """
         plane = np.ascontiguousarray(gray, dtype=np.uint8)
         if plane.ndim == 3 and plane.shape[2] == 1:
             plane = plane.reshape(plane.shape[0], plane.shape[1])
@@ -42,6 +47,7 @@ class DepthShade:
         high = int(np.percentile(valid, 98))
         if high <= low:
             high = low + 1
+        # Map the middle 96% of valid readings across the full display range.
         scaled = (plane.astype(np.float32) - low) * (255.0 / (high - low))
         scaled = np.clip(scaled, 0, 255).astype(np.uint8)
         scaled[plane == 0] = 0

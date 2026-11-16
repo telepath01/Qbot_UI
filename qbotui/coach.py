@@ -23,6 +23,7 @@ class Coach(QWidget):
     )
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        """Build a read-only panel with manual startup instructions."""
         super().__init__(parent)
         self._view = QPlainTextEdit()
         self._view.setObjectName("coachText")
@@ -32,6 +33,7 @@ class Coach(QWidget):
         self.set_ip_host(None)
 
     def set_ip_host(self, address: str | None) -> None:
+        """Update the instructions with the confirmed address, or its empty state."""
         shown = address if address else "(not confirmed)"
         lines = [
             "Startup order",

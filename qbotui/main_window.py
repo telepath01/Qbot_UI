@@ -30,12 +30,14 @@ class _FrameSink(QObject):
     """GUI-thread receiver for one probe's raw frames."""
 
     def __init__(self, label: str, window: QbotMainWindow) -> None:
+        """Remember which feed receives frames and which window displays them."""
         super().__init__(window)
         self._label = label
         self._window = window
 
     @Slot(bytes)
     def accept(self, payload: bytes) -> None:
+        """Forward a complete network frame to the window's display method."""
         self._window._show_payload(self._label, payload)
 
 
@@ -43,6 +45,7 @@ class QbotMainWindow(QMainWindow):
     """Confirm one IPv4, then listen on the four probe ports and no others."""
 
     def __init__(self) -> None:
+        """Create all panels, connect their signals, and populate the address list."""
         super().__init__()
         self.setWindowTitle("QBot Platform Probe Viewer")
         self.resize(1280, 860)
@@ -55,6 +58,7 @@ class QbotMainWindow(QMainWindow):
         self._feeds: dict[str, FeedTile] = {}
         grid_host = QWidget()
         grid = QGridLayout(grid_host)
+        # Keep each stream's image tile in a two-column grid.
         for index, stream in enumerate(ProbeContract.STREAMS):
             tile = FeedTile(stream.label)
             self._feeds[stream.label] = tile
@@ -72,6 +76,8 @@ class QbotMainWindow(QMainWindow):
 
         self._sinks: list[_FrameSink] = []
         for server in self._viewer.servers:
+            # Server signals arrive from worker threads; Qt delivers them to
+            # these GUI-owned receivers so widgets are updated on the GUI thread.
             server.state_changed.connect(self._status.set_state)
             server.activity.connect(self._status.set_activity)
             sink = _FrameSink(server.label, self)
@@ -123,6 +129,7 @@ class QbotMainWindow(QMainWindow):
 
     @Slot(str, bytes)
     def _show_payload(self, label: str, payload: bytes) -> None:
+        """Find the matching tile, decode the payload, and display its image."""
         tile = self._feeds.get(label)
         if tile is None:
             return
@@ -135,6 +142,7 @@ class QbotMainWindow(QMainWindow):
         try:
             presented = self._codec.present(stream, payload)
         except Exception as exc:
+            # Show decoding problems in the feed instead of silently hiding them.
             tile.set_detail(f"frame error: {exc}")
             return
         tile.show_frame(presented.image)
@@ -142,10 +150,12 @@ class QbotMainWindow(QMainWindow):
             tile.set_detail(presented.detail)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        """Stop the PC listeners before allowing the main window to close."""
         self._viewer.stop()
         event.accept()
 
     def _reload_addresses(self) -> None:
+        """Refresh the list of eligible local IPv4 addresses."""
         try:
             rows = self._directory.list_addresses()
         except OSError as exc:
@@ -159,6 +169,7 @@ class QbotMainWindow(QMainWindow):
             )
 
     def _confirm_address(self) -> None:
+        """Require an explicit list choice before authorizing a listen address."""
         chosen = self._address_list.chosen_address()
         if chosen is None:
             self._status.show_note(
@@ -176,6 +187,7 @@ class QbotMainWindow(QMainWindow):
         self._sync_controls()
 
     def _start_listeners(self) -> None:
+        """Ask the viewer to start all probe listeners on the confirmed address."""
         try:
             self._viewer.start()
         except BindRejected as exc:
@@ -188,11 +200,13 @@ class QbotMainWindow(QMainWindow):
         self._sync_controls()
 
     def _stop_listeners(self) -> None:
+        """Stop only this computer's viewer servers and refresh the controls."""
         self._viewer.stop()
         self._status.show_note("This stops the PC viewer servers only.")
         self._sync_controls()
 
     def _sync_controls(self) -> None:
+        """Disable address controls while servers are active and gate the start button."""
         locked = self._viewer.listeners_active
         self._start.setEnabled(self._viewer.confirmed_address is not None and not locked)
         self._confirm.setEnabled(not locked)

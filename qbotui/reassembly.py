@@ -4,9 +4,10 @@ from __future__ import annotations
 
 
 class FrameReassembly:
-    """No magic, no length prefix, no dtype, no shape, no timestamp, no name."""
+    """Buffer TCP data until one known-size frame can be returned."""
 
     def __init__(self, frame_size: int) -> None:
+        """Create a buffer for frames with the given fixed byte count."""
         if frame_size <= 0:
             raise ValueError("frame size must be the known byte count")
         self._frame_size = frame_size
@@ -14,9 +15,15 @@ class FrameReassembly:
 
     @property
     def frame_size(self) -> int:
+        """Return the number of bytes required for one frame."""
         return self._frame_size
 
     def read_frame(self, reader: object) -> bytes:
+        """Read enough bytes for one frame, retaining any extra bytes for later.
+
+        TCP is a byte stream, so one read is not guaranteed to match one frame.
+        ``reader`` only needs to provide a ``read(size)`` method.
+        """
         read = getattr(reader, "read", None)
         if not callable(read):
             raise TypeError("reader must provide read(size)")

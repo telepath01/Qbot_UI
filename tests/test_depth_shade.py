@@ -1,4 +1,4 @@
-"""Depth display stretch keeps the received bytes and makes them visible."""
+"""Check how received depth pixels are made easier to see on screen."""
 
 from __future__ import annotations
 
@@ -13,13 +13,17 @@ from qbotui.frame_codec import FrameCodec
 
 
 class DepthShadeTest(unittest.TestCase):
+    """Verify depth shading and its use by the frame display code."""
+
     def test_flat_zero_stays_black_and_says_so(self) -> None:
+        """An all-zero image means no readings, so it remains black."""
         shaded = DepthShade().shade(np.zeros((240, 320), dtype=np.uint8))
         self.assertEqual(shaded.image.shape, (240, 320, 3))
         self.assertEqual(int(shaded.image.max()), 0)
         self.assertIn("every pixel is 0", shaded.detail)
 
     def test_narrow_range_uses_the_full_color_scale(self) -> None:
+        """A small range of useful readings should still have visible contrast."""
         plane = np.full((240, 320), 20, dtype=np.uint8)
         plane[80:160, 40:280] = 45
         shaded = DepthShade().shade(plane)
@@ -29,6 +33,7 @@ class DepthShadeTest(unittest.TestCase):
         self.assertIn("raw 20–45", shaded.detail)
 
     def test_present_depth_is_rgb_and_downward_stays_gray(self) -> None:
+        """Depth is colorized, while the downward camera keeps its gray format."""
         codec = FrameCodec()
         depth = np.full((240, 320, 1), 30, dtype=np.uint8)
         depth[40:100, 40:100] = 70

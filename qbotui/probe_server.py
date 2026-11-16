@@ -24,14 +24,20 @@ class PortState:
 
 
 class TimedSocketReader:
-    """Read socket bytes until the peer closes, the socket errors, or stop is set."""
+    """Read socket bytes until data arrives, the peer closes, or stop is set.
+
+    The socket uses a timeout so the thread periodically checks whether it
+    should stop instead of waiting forever for incoming data.
+    """
 
     def __init__(self, sock: socket.socket, stop: threading.Event, timeout: float = 0.5) -> None:
+        """Store the socket and stop signal used for bounded waiting reads."""
         self._sock = sock
         self._stop = stop
         self._timeout = timeout
 
     def read(self, size: int) -> bytes:
+        """Return received bytes, retrying timeouts until data or a stop occurs."""
         while not self._stop.is_set():
             try:
                 return self._sock.recv(size)
@@ -46,10 +52,12 @@ class _CountingReader:
     """Count socket bytes so the status line can show that a port is receiving."""
 
     def __init__(self, reader: TimedSocketReader, on_bytes) -> None:
+        """Wrap a reader so each successful read also updates activity counters."""
         self._reader = reader
         self._on_bytes = on_bytes
 
     def read(self, size: int) -> bytes:
+        """Read a chunk and report its length when at least one byte arrived."""
         chunk = self._reader.read(size)
         if chunk:
             self._on_bytes(len(chunk))
@@ -69,6 +77,7 @@ class ProbeServer(QObject):
         policy: BindPolicy,
         parent: QObject | None = None,
     ) -> None:
+        """Prepare server state; no socket is opened until ``start`` is called."""
         super().__init__(parent)
         self._stream = stream
         self._policy = policy
@@ -81,22 +90,27 @@ class ProbeServer(QObject):
 
     @property
     def label(self) -> str:
+        """Return the human-readable name for this server's stream."""
         return self._stream.label
 
     @property
     def port(self) -> int:
+        """Return the TCP port this server listens on."""
         return self._stream.port
 
     @property
     def stream(self) -> ProbeStream:
+        """Return the fixed size and image details for this server's stream."""
         return self._stream
 
     @property
     def state(self) -> str:
+        """Return the current connection state in a thread-safe way."""
         with self._lock:
             return self._state
 
     def start(self, host: str) -> None:
+        """Validate the address and launch this server's background thread."""
         authorized_host, port = self._policy.authorize_bind(host, self._stream.port)
         with self._lock:
             alive = self._thread is not None and self._thread.is_alive()
@@ -114,28 +128,34 @@ class ProbeServer(QObject):
         thread.start()
 
     def mark_bind_failure(self) -> None:
+        """Publish a bind-failure state when the viewer cannot authorize startup."""
         self._set_state(PortState.BIND_FAILURE)
 
     def request_stop(self) -> None:
+        """Signal the worker and close sockets so blocked reads/waits can finish."""
         self._stop.set()
         self._close_client()
         self._close_listen()
 
     def join(self, timeout: float) -> None:
+        """Wait briefly for the worker thread to finish, unless called by that thread."""
         with self._lock:
             thread = self._thread
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=timeout)
 
     def mark_stopped(self) -> None:
+        """Publish the stopped status after shutdown has been requested."""
         self._set_state(PortState.STOPPED)
 
     def stop(self) -> None:
+        """Request shutdown, wait for the worker, and publish the final state."""
         self.request_stop()
         self.join(3.0)
         self.mark_stopped()
 
     def _run(self, host: str, port: int) -> None:
+        """Bind one TCP port, accept clients, and serve each client in turn."""
         listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             listen.bind((host, port))
@@ -176,6 +196,7 @@ class ProbeServer(QObject):
         self._close_listen()
 
     def _serve_client(self, client: socket.socket) -> None:
+        """Collect exact-size frames from one client and emit each complete frame."""
         with self._lock:
             if self._client is not None:
                 try:
@@ -191,6 +212,7 @@ class ProbeServer(QObject):
         last_note = 0.0
 
         def note_bytes(count: int) -> None:
+            """Update the activity display at most five times per second."""
             nonlocal received, last_note
             received += count
             now = time.monotonic()
@@ -199,6 +221,7 @@ class ProbeServer(QObject):
                 self.activity.emit(self.label, f"{received} bytes, {frames} frames")
 
         reader = _CountingReader(TimedSocketReader(client, self._stop), note_bytes)
+        # TCP can split or combine frames arbitrarily; reassembly uses the known size.
         reassembly = FrameReassembly(self._stream.byte_count)
         try:
             while not self._stop.is_set():
@@ -216,6 +239,7 @@ class ProbeServer(QObject):
                 self._set_state(PortState.DISCONNECTED)
 
     def _close_listen(self) -> None:
+        """Detach and close the listening socket safely if one is open."""
         with self._lock:
             sock = self._listen
             self._listen = None
@@ -226,6 +250,7 @@ class ProbeServer(QObject):
                 pass
 
     def _close_client(self) -> None:
+        """Detach and close the connected client's socket safely if it is open."""
         with self._lock:
             sock = self._client
             self._client = None
@@ -236,6 +261,7 @@ class ProbeServer(QObject):
                 pass
 
     def _set_state(self, state: str) -> None:
+        """Store a port status under lock, then notify the user interface."""
         with self._lock:
             self._state = state
         self.state_changed.emit(self._stream.label, state)

@@ -17,17 +17,21 @@ class BindPolicy:
     ALLOWED_PORTS = ProbeContract.ports()
 
     def __init__(self) -> None:
+        """Start with no network address authorized for listening."""
         self._confirmed: str | None = None
 
     @property
     def allowed_ports(self) -> frozenset[int]:
+        """Return the fixed set of ports reserved for probe streams."""
         return self.ALLOWED_PORTS
 
     @property
     def confirmed_address(self) -> str | None:
+        """Return the confirmed address, if the operator has chosen one."""
         return self._confirmed
 
     def validated_host(self, host: object) -> str:
+        """Check that ``host`` is a usable IPv4 address and return its normalized form."""
         if host == "":
             raise BindRejected("empty host")
         if not isinstance(host, str):
@@ -44,6 +48,7 @@ class BindPolicy:
         return normalized
 
     def confirm(self, host: str) -> str:
+        """Record one address; refuse attempts to replace it without release."""
         normalized = self.validated_host(host)
         if self._confirmed is not None and normalized != self._confirmed:
             raise BindRejected("second address")
@@ -55,6 +60,7 @@ class BindPolicy:
         self._confirmed = None
 
     def authorize_bind(self, host: str, port: int) -> tuple[str, int]:
+        """Validate a server bind request against the address and port allowlist."""
         normalized = self.validated_host(host)
         if port not in self.ALLOWED_PORTS:
             raise BindRejected("port is outside the probe set")

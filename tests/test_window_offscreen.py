@@ -1,4 +1,4 @@
-"""Construct the main window without opening an interactive desktop session."""
+"""Check the main window without opening a visible desktop window."""
 
 from __future__ import annotations
 
@@ -10,8 +10,12 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 
 class OffscreenWindowTest(unittest.TestCase):
+    """Test basic window contents when Qt's offscreen display is available."""
+
     def test_main_window_constructs(self) -> None:
+        """Build the window and check key controls without starting any listeners."""
         try:
+            # Qt and its offscreen plugin are optional in some test environments.
             import PySide6
             from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QTextEdit
         except Exception as exc:
@@ -36,6 +40,7 @@ class OffscreenWindowTest(unittest.TestCase):
         try:
             window.show()
             app.processEvents()
+            # Check the four feed panels and that no address was selected for us.
             self.assertEqual(len(window.findChildren(FeedTile)), 4)
             self.assertFalse(window._address_list.operator_chose)
             window._confirm_address()
@@ -54,6 +59,7 @@ class OffscreenWindowTest(unittest.TestCase):
                 button for button in window.findChildren(QPushButton) if button.text() == "Stop"
             ]
             self.assertEqual(len(stop_buttons), 1)
+            # "Stop" only stops the viewer; this interface has no emergency-stop control.
             for button in window.findChildren(QPushButton):
                 lowered = button.text().lower()
                 self.assertNotIn("e-stop", lowered)
@@ -66,5 +72,6 @@ class OffscreenWindowTest(unittest.TestCase):
             self.assertIn("Closing this window does not disarm the robot.", text)
             self.assertIn("The robot script stops its own loop at 90 seconds.", text)
         finally:
+            # Always close the window so Qt resources are released if an assertion fails.
             window.close()
             app.processEvents()

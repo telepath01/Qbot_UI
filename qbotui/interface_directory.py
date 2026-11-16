@@ -21,13 +21,14 @@ from ctypes import (
 
 
 class UnicastAddressFilter:
-    """Drop loopback, APIPA, and adapters that are not up."""
+    """Keep only valid IPv4 addresses on active adapters, excluding special ranges."""
 
     LOOPBACK = ipaddress.IPv4Network("127.0.0.0/8")
     APIPA = ipaddress.IPv4Network("169.254.0.0/16")
     UP = 1
 
     def keep(self, ipv4: str, oper_status: int) -> bool:
+        """Say whether an address is eligible to show in the chooser."""
         if oper_status != self.UP:
             return False
         try:
@@ -40,6 +41,8 @@ class UnicastAddressFilter:
 
 
 class _SockAddr(Structure):
+    """Windows socket address header; ``sa_data`` holds family-specific bytes."""
+
     _fields_ = (
         ("sa_family", c_ushort),
         ("sa_data", c_ubyte * 14),
@@ -47,6 +50,8 @@ class _SockAddr(Structure):
 
 
 class _SocketAddress(Structure):
+    """Windows wrapper pairing an address pointer with the address length."""
+
     _fields_ = (
         ("lpSockaddr", POINTER(_SockAddr)),
         ("iSockaddrLength", c_uint),
@@ -54,6 +59,12 @@ class _SocketAddress(Structure):
 
 
 class _IpAdapterUnicastAddress(Structure):
+    """Windows linked-list node describing one adapter IP address.
+
+    The unused fields are still declared because Windows expects this structure
+    to match its C layout exactly; ``Next`` points to the following address.
+    """
+
     pass
 
 
@@ -73,6 +84,12 @@ _IpAdapterUnicastAddress._fields_ = (
 
 
 class _IpAdapterAddresses(Structure):
+    """Windows linked-list node describing one adapter and its addresses.
+
+    These field names and types mirror the Windows API structure so ctypes can
+    read values at the correct byte offsets in the returned memory buffer.
+    """
+
     pass
 
 
@@ -98,7 +115,7 @@ _IpAdapterAddresses._fields_ = (
 
 
 class InterfaceDirectory:
-    """Walk GetAdaptersAddresses and return (friendly_name, ipv4) rows."""
+    """Read Windows network adapters and provide eligible name/address rows."""
 
     AF_INET = 2
     GAA_FLAG_SKIP_ANYCAST = 0x0002
@@ -109,19 +126,24 @@ class InterfaceDirectory:
     ERROR_BUFFER_OVERFLOW = 111
 
     def __init__(self, address_filter: UnicastAddressFilter | None = None) -> None:
+        """Use the supplied filter, or the standard loopback/APIPA filter."""
         self._filter = address_filter if address_filter is not None else UnicastAddressFilter()
 
     def keep_address(self, ipv4: str, oper_status: int) -> bool:
+        """Expose the address filter for callers and tests."""
         return self._filter.keep(ipv4, oper_status)
 
     def ipv4_from_sa_data(self, sa_data: bytes) -> str:
+        """Extract four IPv4 bytes from the Windows socket-address data field."""
         data = bytes(sa_data)
+        # The first two bytes store the address family; IPv4 bytes follow them.
         octets = data[2:6]
         if len(octets) != 4:
             raise ValueError("sa_data does not contain an IPv4 address")
         return ".".join(str(octet) for octet in octets)
 
     def list_addresses(self) -> list[tuple[str, str]]:
+        """Return eligible rows as ``(adapter name, IPv4 address)`` pairs."""
         rows: list[tuple[str, str]] = []
         for friendly_name, ipv4, oper_status in self._read_adapters():
             if self.keep_address(ipv4, oper_status):
@@ -129,6 +151,7 @@ class InterfaceDirectory:
         return rows
 
     def _read_adapters(self) -> list[tuple[str, str, int]]:
+        """Call Windows' adapter API and walk its adapter/address linked lists."""
         if sys.platform != "win32":
             return []
         iphlpapi = WinDLL("iphlpapi")
@@ -143,6 +166,7 @@ class InterfaceDirectory:
         get_adapters.restype = c_ulong
 
         size = c_ulong(0)
+        # First call asks Windows how much memory its adapter data will need.
         overflow = get_adapters(
             self.AF_INET,
             self.FLAGS,
@@ -155,6 +179,7 @@ class InterfaceDirectory:
         if size.value == 0:
             return []
 
+        # The second call fills a buffer sized from the first call's response.
         buffer = create_string_buffer(size.value)
         result = get_adapters(
             self.AF_INET,
@@ -196,6 +221,7 @@ class InterfaceDirectory:
         return rows
 
     def _ipv4_from_unicast(self, record: _IpAdapterUnicastAddress) -> str | None:
+        """Return an IPv4 string for one Windows address record, if it is IPv4."""
         sockaddr_pointer = record.Address.lpSockaddr
         if not sockaddr_pointer:
             return None

@@ -13,6 +13,7 @@ class Viewer(QObject):
     """Start and stop the four PC listeners. No camera device and no second address."""
 
     def __init__(self, policy: BindPolicy, parent: QObject | None = None) -> None:
+        """Create one server for each contracted stream without starting them."""
         super().__init__(parent)
         self._policy = policy
         self._active = False
@@ -22,17 +23,21 @@ class Viewer(QObject):
 
     @property
     def servers(self) -> tuple[ProbeServer, ...]:
+        """Return the four managed servers."""
         return self._servers
 
     @property
     def confirmed_address(self) -> str | None:
+        """Return the one address currently approved by the bind policy."""
         return self._policy.confirmed_address
 
     @property
     def listeners_active(self) -> bool:
+        """Whether the viewer has been asked to keep its listeners active."""
         return self._active
 
     def confirm_address(self, host: str) -> str:
+        """Confirm an address, allowing a different one only after stopping."""
         if self._active:
             raise BindRejected("Changing address is allowed only while servers are stopped")
         candidate = self._policy.validated_host(host)
@@ -42,6 +47,7 @@ class Viewer(QObject):
         return self._policy.confirm(candidate)
 
     def start(self) -> None:
+        """Start all four listeners on the confirmed address."""
         if self._active:
             return
         host = self._policy.confirmed_address
@@ -55,6 +61,7 @@ class Viewer(QObject):
                 server.mark_bind_failure()
 
     def stop(self) -> None:
+        """Request all listeners to stop, wait for them, and clear the active flag."""
         for server in self._servers:
             server.request_stop()
         for server in self._servers:

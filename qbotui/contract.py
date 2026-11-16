@@ -16,7 +16,9 @@ class ProbeStream:
     shape: tuple[int, ...]
 
     def __post_init__(self) -> None:
+        """Reject a stream definition whose size disagrees with its image layout."""
         if self.kind == "lidar":
+            # Each lidar row contains two 32-bit floating-point values.
             expected = 210 * 2 * 4
         elif self.kind in ("gray", "bgr"):
             expected = 1
@@ -31,7 +33,7 @@ class ProbeStream:
 
 
 class ProbeContract:
-    """The only four listeners this viewer is allowed to open."""
+    """The four fixed ports, payload sizes, and shapes used by this viewer."""
 
     DOWNWARD = ProbeStream(
         "Downward Facing Image",
@@ -65,4 +67,5 @@ class ProbeContract:
 
     @classmethod
     def ports(cls) -> frozenset[int]:
+        """Return the allowed listener ports as an immutable set."""
         return frozenset(stream.port for stream in cls.STREAMS)
